@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, type CSSProperties } from "react";
+import imageCompression from "browser-image-compression";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
 type Created = { id: string; url: string; password: string; linkId: string };
 type UploadState = "idle" | "uploading" | "done";
@@ -16,11 +18,12 @@ export default function NewDeliveryPage() {
   const [project, setProject] = useState<Created | null>(null);
 
   const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [uploadedCount, setUploadedCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // 1. 案件を作成 → project が返ってきたらドロップゾーンが出る
+  // 1. 案件を作成
   async function createProject() {
     if (!name) return;
     setCreating(true);
@@ -38,7 +41,7 @@ export default function NewDeliveryPage() {
     }
   }
 
-  // 2. 写真をアップロード
+  // 2. 写真をアップロード（ブラウザ → Supabase 直行）
   async function uploadFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0 || !project) return;
     const photos = Array.from(fileList).filter((f) => f.type.startsWith("image/"));
@@ -46,23 +49,78 @@ export default function NewDeliveryPage() {
       alert("写真ファイルを入れてください（動画は次のステップで対応します）");
       return;
     }
+
     setUploadState("uploading");
-    const form = new FormData();
-    form.append("projectId", project.id);
-    photos.forEach((f) => form.append("files", f));
+    setProgress({ done: 0, total: photos.length });
 
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json();
-      if (res.ok) {
-        setUploadedCount((c) => c + data.uploaded);
-        setUploadState("done");
-      } else {
-        alert(data.error ?? "アップロードに失敗しました");
-        setUploadState("idle");
+      // (a) 枚数ぶんの署名付きアップロードURLをまとめて取得
+      const urlRes = await fetch("/api/upload-urls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, count: photos.length }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error ?? "URL発行に失敗");
+      const slots = urlData.slots as {
+        seq: number; originalKey: string; thumbKey: string;
+        originalUpload: { token: string; path: string };
+        thumbUpload: { token: string; path: string };
+      }[];
+
+      const recorded: {
+        seq: number; originalKey: string; thumbKey: string;
+        originalFilename: string; sizeBytes: number;
+      }[] = [];
+
+      // (b) 1枚ずつ、原本と軽量版を直接アップロード
+      for (let i = 0; i < photos.length; i++) {
+        const file = photos[i];
+        const slot = slots[i];
+
+        // 軽量版（長辺2000px・JPEG）をブラウザで生成
+        const thumb = await imageCompression(file, {
+          maxWidthOrHeight: 2000,
+          maxSizeMB: 1.5,
+          useWebWorker: true,
+          fileType: "image/jpeg",
+        });
+
+        // 原本を photos バケットへ直接アップロード
+        const up1 = await supabaseBrowser.storage
+          .from("photos")
+          .uploadToSignedUrl(slot.originalUpload.path, slot.originalUpload.token, file);
+        if (up1.error) throw new Error(`原本の保存に失敗: ${up1.error.message}`);
+
+        // 軽量版を thumbnails バケットへ直接アップロード
+        const up2 = await supabaseBrowser.storage
+          .from("thumbnails")
+          .uploadToSignedUrl(slot.thumbUpload.path, slot.thumbUpload.token, thumb);
+        if (up2.error) throw new Error(`軽量版の保存に失敗: ${up2.error.message}`);
+
+        recorded.push({
+          seq: slot.seq,
+          originalKey: slot.originalKey,
+          thumbKey: slot.thumbKey,
+          originalFilename: file.name,
+          sizeBytes: file.size,
+        });
+        setProgress({ done: i + 1, total: photos.length });
       }
-    } catch {
-      alert("アップロード中にエラーが発生しました");
+
+      // (c) 完了をDBに記録
+      const doneRes = await fetch("/api/upload-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, items: recorded }),
+      });
+      const doneData = await doneRes.json();
+      if (!doneRes.ok) throw new Error(doneData.error ?? "記録に失敗");
+
+      setUploadedCount((c) => c + recorded.length);
+      setUploadState("done");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "アップロード中にエラーが発生しました");
       setUploadState("idle");
     }
   }
@@ -75,7 +133,6 @@ export default function NewDeliveryPage() {
       <div style={S.card}>
         <h1 style={S.h1}>新規納品を作成</h1>
 
-        {/* 設定フォーム（案件作成後はロック） */}
         <label style={S.label}>案件名</label>
         <input style={S.input} value={name} disabled={!!project}
           onChange={(e) => setName(e.target.value)} placeholder="cafe LOTUS 秋メニュー撮影" />
@@ -115,27 +172,25 @@ export default function NewDeliveryPage() {
           </label>
         )}
 
-        {/* 案件作成前：作成ボタン */}
         {!project && (
           <button style={S.primary} onClick={createProject} disabled={creating || !name}>
             {creating ? "作成中…" : "案件を作成"}
           </button>
         )}
 
-        {/* 案件作成後：ドロップゾーン */}
         {project && (
           <>
             <div
-              style={{ ...S.drop, ...(dragOver ? S.dropOver : {}) }}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              style={{ ...S.drop, ...(dragOver ? S.dropOver : {}), ...(uploadState === "uploading" ? S.dropBusy : {}) }}
+              onDragOver={(e) => { e.preventDefault(); if (uploadState !== "uploading") setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
-              onClick={() => fileInput.current?.click()}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); if (uploadState !== "uploading") uploadFiles(e.dataTransfer.files); }}
+              onClick={() => uploadState !== "uploading" && fileInput.current?.click()}
             >
               <input ref={fileInput} type="file" accept="image/*" multiple hidden
                 onChange={(e) => uploadFiles(e.target.files)} />
               {uploadState === "uploading" ? (
-                <p style={S.dropText}>アップロード中…（軽量版を生成しています）</p>
+                <p style={S.dropText}>アップロード中… {progress.done} / {progress.total}枚</p>
               ) : (
                 <>
                   <p style={S.dropText}>写真をここにドラッグ、またはクリックして選択</p>
@@ -148,7 +203,6 @@ export default function NewDeliveryPage() {
               <p style={S.uploaded}>✓ {uploadedCount}枚の写真をアップロード済み</p>
             )}
 
-            {/* 共有リンク */}
             <div style={S.result}>
               <p style={S.resultLabel}>共有リンク</p>
               <div style={S.resultRow}>
@@ -184,6 +238,7 @@ const S: Record<string, CSSProperties> = {
   primary: { width: "100%", height: 44, background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: "pointer" },
   drop: { border: "1.5px dashed #d4d4d4", borderRadius: 12, background: "#fafafa", padding: "28px", textAlign: "center", cursor: "pointer", marginTop: 8 },
   dropOver: { borderColor: "#1a1a1a", background: "#f0f0f0" },
+  dropBusy: { cursor: "default", opacity: 0.7 },
   dropText: { fontSize: 14, color: "#333", margin: 0 },
   dropSub: { fontSize: 12, color: "#999", margin: "6px 0 0" },
   uploaded: { fontSize: 13, color: "#555", margin: "12px 0 0" },
