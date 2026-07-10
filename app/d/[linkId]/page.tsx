@@ -1,8 +1,15 @@
 "use client";
 
 import { useState, use, useCallback, useEffect, type CSSProperties } from "react";
+import JSZip from "jszip";
 
-type Photo = { id: string; seq: number; url: string | null };
+type Photo = {
+  id: string;
+  seq: number;
+  url: string | null;
+  downloadUrl: string | null;
+  filename: string;
+};
 type Data = {
   name: string;
   shootDate: string | null;
@@ -18,8 +25,9 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
   const [error, setError] = useState("");
   const [data, setData] = useState<Data | null>(null);
 
-  // ライトボックスで開いている写真のindex（null＝閉じている）
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [zipping, setZipping] = useState(false);
+  const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 });
 
   async function unlock() {
     if (!password) return;
@@ -49,7 +57,6 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     setLightbox((i) => (i === null || !data ? i : (i + 1) % data.photos.length));
   }, [data]);
 
-  // キーボード操作（←→で送る、Escで閉じる）
   useEffect(() => {
     if (lightbox === null) return;
     function onKey(e: KeyboardEvent) {
@@ -60,6 +67,49 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox, close, prev, next]);
+
+  // 個別ダウンロード
+  function downloadOne(p: Photo) {
+    if (!p.downloadUrl) return;
+    const a = document.createElement("a");
+    a.href = p.downloadUrl;
+    a.download = p.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // 一括ダウンロード（ブラウザ側でZIP生成）
+  async function downloadAll() {
+    if (!data) return;
+    const targets = data.photos.filter((p) => p.downloadUrl);
+    if (targets.length === 0) return;
+    setZipping(true);
+    setZipProgress({ done: 0, total: targets.length });
+    try {
+      const zip = new JSZip();
+      for (let i = 0; i < targets.length; i++) {
+        const p = targets[i];
+        const res = await fetch(p.downloadUrl!);
+        const blob = await res.blob();
+        zip.file(p.filename, blob);
+        setZipProgress({ done: i + 1, total: targets.length });
+      }
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${data.name}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("ZIPの作成に失敗しました");
+    } finally {
+      setZipping(false);
+    }
+  }
 
   // --- パスワード画面 ---
   if (!data) {
@@ -85,6 +135,7 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     );
   }
 
+  const isFinal = data.deliveryType === "final";
   const current = lightbox !== null ? data.photos[lightbox] : null;
 
   // --- ギャラリー画面 ---
@@ -93,21 +144,32 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
       <div style={S.wrap}>
         <div style={S.header}>
           <span style={S.headerLogo}>APOLLO</span>
-          <span style={S.badge}>{data.deliveryType === "review" ? "確認用" : "納品"}</span>
+          <span style={S.badge}>{isFinal ? "納品" : "確認用"}</span>
         </div>
 
         <h1 style={S.title}>{data.name}</h1>
         {data.shootDate && <p style={S.meta}>撮影日 {data.shootDate}</p>}
 
-        <p style={S.count}>写真 · {data.photos.length}点</p>
+        <div style={S.barRow}>
+          <p style={S.count}>写真 · {data.photos.length}点</p>
+          {isFinal && (
+            <button style={S.dlAll} onClick={downloadAll} disabled={zipping}>
+              {zipping ? `準備中… ${zipProgress.done}/${zipProgress.total}` : "すべてダウンロード (ZIP)"}
+            </button>
+          )}
+        </div>
 
         <div style={S.grid}>
           {data.photos.map((p, i) => (
-            <div key={p.id} style={S.thumb} onClick={() => p.url && setLightbox(i)}>
+            <div key={p.id} style={S.thumb}>
               {p.url ? (
-                <img src={p.url} alt={`写真 ${p.seq}`} style={S.img} loading="lazy" />
+                <img src={p.url} alt={`写真 ${p.seq}`} style={S.img} loading="lazy"
+                  onClick={() => setLightbox(i)} />
               ) : (
                 <span style={S.num}>{String(p.seq).padStart(3, "0")}</span>
+              )}
+              {isFinal && p.downloadUrl && (
+                <button style={S.dlOne} onClick={() => downloadOne(p)} aria-label="ダウンロード">↓</button>
               )}
             </div>
           ))}
@@ -116,19 +178,19 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
         <p style={S.footer}>APOLLO</p>
       </div>
 
-      {/* --- ライトボックス（拡大表示） --- */}
+      {/* --- ライトボックス --- */}
       {current && current.url && (
         <div style={S.lb} onClick={close}>
           <button style={{ ...S.lbBtn, ...S.lbClose }} onClick={(e) => { e.stopPropagation(); close(); }} aria-label="閉じる">✕</button>
           <button style={{ ...S.lbBtn, ...S.lbPrev }} onClick={(e) => { e.stopPropagation(); prev(); }} aria-label="前へ">‹</button>
-          <img
-            src={current.url}
-            alt={`写真 ${current.seq}`}
-            style={S.lbImg}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <img src={current.url} alt={`写真 ${current.seq}`} style={S.lbImg} onClick={(e) => e.stopPropagation()} />
           <button style={{ ...S.lbBtn, ...S.lbNext }} onClick={(e) => { e.stopPropagation(); next(); }} aria-label="次へ">›</button>
-          <span style={S.lbCaption}>{lightbox! + 1} / {data.photos.length}</span>
+          <div style={S.lbBottom}>
+            <span style={S.lbCaption}>{lightbox! + 1} / {data.photos.length}</span>
+            {isFinal && current.downloadUrl && (
+              <button style={S.lbDl} onClick={(e) => { e.stopPropagation(); downloadOne(current); }}>この写真をダウンロード</button>
+            )}
+          </div>
         </div>
       )}
     </main>
@@ -151,18 +213,23 @@ const S: Record<string, CSSProperties> = {
   badge: { fontSize: 11, fontWeight: 500, letterSpacing: "0.08em", padding: "3px 10px", borderRadius: 5, background: "#1a1a1a", color: "#fff" },
   title: { fontSize: 24, fontWeight: 500, margin: "0 0 6px" },
   meta: { fontSize: 13, color: "#888", margin: "0 0 24px" },
-  count: { fontSize: 12, letterSpacing: "0.12em", color: "#999", margin: "0 0 14px" },
+  barRow: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 14px", flexWrap: "wrap", gap: 10 },
+  count: { fontSize: 12, letterSpacing: "0.12em", color: "#999", margin: 0 },
+  dlAll: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 36, padding: "0 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 },
-  thumb: { position: "relative", aspectRatio: "3/2", background: "#f4f4f4", border: "0.5px solid #eee", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
-  img: { width: "100%", height: "100%", objectFit: "cover" },
+  thumb: { position: "relative", aspectRatio: "3/2", background: "#f4f4f4", border: "0.5px solid #eee", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" },
+  img: { width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" },
   num: { fontSize: 12, color: "#bbb" },
+  dlOne: { position: "absolute", top: 6, right: 6, width: 28, height: 28, borderRadius: 6, background: "rgba(255,255,255,0.9)", border: "0.5px solid #ddd", fontSize: 15, color: "#333", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   footer: { textAlign: "center", fontSize: 11, letterSpacing: "0.2em", color: "#ccc", marginTop: 40 },
 
   lb: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 },
-  lbImg: { maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain", userSelect: "none" },
+  lbImg: { maxWidth: "92vw", maxHeight: "84vh", objectFit: "contain", userSelect: "none" },
   lbBtn: { position: "fixed", background: "rgba(255,255,255,0.12)", color: "#fff", border: "none", borderRadius: 999, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   lbClose: { top: 20, right: 24, width: 44, height: 44, fontSize: 18 },
   lbPrev: { left: 20, top: "50%", transform: "translateY(-50%)", width: 52, height: 52, fontSize: 30 },
   lbNext: { right: 20, top: "50%", transform: "translateY(-50%)", width: 52, height: 52, fontSize: 30 },
-  lbCaption: { position: "fixed", bottom: 24, left: 0, right: 0, textAlign: "center", color: "rgba(255,255,255,0.7)", fontSize: 13 },
+  lbBottom: { position: "fixed", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
+  lbCaption: { color: "rgba(255,255,255,0.7)", fontSize: 13 },
+  lbDl: { background: "#fff", color: "#1a1a1a", border: "none", borderRadius: 8, height: 38, padding: "0 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
 };
