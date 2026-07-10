@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { notifyLine } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
 // クライアントが共有リンクを開いてパスワードを入れたときに呼ばれる。
-// 照合OKなら案件情報＋写真を返す。
-// 納品(final)のときだけ、原本のダウンロードURLも一緒に返す。
+// 照合OKなら案件情報＋写真を返す。納品(final)のときは原本DL URLも返す。
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { linkId, password } = body as { linkId?: string; password?: string };
@@ -49,12 +49,10 @@ export async function POST(req: Request) {
 
   const photos = [];
   for (const a of assets ?? []) {
-    // 表示用：軽量版の署名付きURL（1時間）
     const { data: thumb } = await supabaseAdmin.storage
       .from("thumbnails")
       .createSignedUrl(a.thumb_key, 3600);
 
-    // 納品用のみ：原本のダウンロードURL（1時間、ダウンロードとして開く）
     let downloadUrl: string | null = null;
     if (isFinal) {
       const { data: orig } = await supabaseAdmin.storage
@@ -74,11 +72,16 @@ export async function POST(req: Request) {
     });
   }
 
+  // 閲覧イベントを記録
   await supabaseAdmin.from("events").insert({
     project_id: project.id,
     action: "view",
     meta: {},
   });
+
+  // LINE通知（閲覧された）
+  const label = isFinal ? "納品" : "確認用";
+  await notifyLine(`📂 ${project.name}（${label}）が開かれました`);
 
   return NextResponse.json({
     name: project.name,
