@@ -1,11 +1,11 @@
+// LINEに通知を送る共通関数。
+// 通知の失敗が本来の処理（閲覧・DL）を止めないよう、エラーは握りつぶしてログだけ残す。
 export async function notifyLine(text: string): Promise<void> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const to = process.env.LINE_ADMIN_USER_ID;
 
-  console.log("[notifyLine] token exists:", !!token, "/ to exists:", !!to);
-
   if (!token || !to) {
-    console.warn("[notifyLine] 環境変数が未設定のためスキップしました");
+    console.warn("[notifyLine] LINEの環境変数が未設定のためスキップしました");
     return;
   }
 
@@ -18,8 +18,10 @@ export async function notifyLine(text: string): Promise<void> {
       },
       body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
     });
-    const body = await res.text();
-    console.log("[notifyLine] LINE response:", res.status, body);
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[notifyLine] 送信失敗 ${res.status}: ${body}`);
+    }
   } catch (e) {
     console.error("[notifyLine] 例外:", e);
   }

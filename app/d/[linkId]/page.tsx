@@ -77,6 +77,12 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     document.body.appendChild(a);
     a.click();
     a.remove();
+    // 通知（個別。サーバー側で初回のみLINEへ）
+    fetch("/api/download-notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId, kind: "single" }),
+    }).catch(() => {});
   }
 
   // 一括ダウンロード（ブラウザ側でZIP生成）
@@ -104,6 +110,12 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      // 通知（一括。必ずLINEへ）
+      fetch("/api/download-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkId, kind: "bulk", count: targets.length }),
+      }).catch(() => {});
     } catch {
       alert("ZIPの作成に失敗しました");
     } finally {
