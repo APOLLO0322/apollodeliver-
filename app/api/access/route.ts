@@ -79,9 +79,10 @@ export async function POST(req: Request) {
     meta: {},
   });
 
-  // LINE通知（閲覧された）
-  const label = isFinal ? "納品" : "確認用";
-  await notifyLine(`📂 ${project.name}（${label}）が開かれました`);
+  // LINE通知：確認用が開かれたときのみ（納品は開通知しない＝DL時に通知するため）
+  if (!isFinal) {
+    await notifyLine(`👀 ${project.name}（確認用）が開かれました`);
+  }
 
   return NextResponse.json({
     name: project.name,
