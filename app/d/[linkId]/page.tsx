@@ -1,0 +1,119 @@
+"use client";
+
+import { useState, use, type CSSProperties } from "react";
+
+type Photo = { id: string; seq: number; url: string | null };
+type Data = {
+  name: string;
+  shootDate: string | null;
+  deliveryType: "review" | "final";
+  selectEnabled: boolean;
+  photos: Photo[];
+};
+
+export default function DeliveryPage({ params }: { params: Promise<{ linkId: string }> }) {
+  const { linkId } = use(params);
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [data, setData] = useState<Data | null>(null);
+
+  async function unlock() {
+    if (!password) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkId, password }),
+      });
+      const json = await res.json();
+      if (res.ok) setData(json);
+      else setError(json.error ?? "エラーが発生しました");
+    } catch {
+      setError("接続に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- パスワード画面 ---
+  if (!data) {
+    return (
+      <main style={S.gate}>
+        <div style={S.gateCard}>
+          <div style={S.logo}>APOLLO</div>
+          <p style={S.gateSub}>共有リンクを開くにはパスワードが必要です</p>
+          <input
+            style={S.gateInput}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && unlock()}
+            placeholder="パスワード"
+          />
+          {error && <p style={S.error}>{error}</p>}
+          <button style={S.gateBtn} onClick={unlock} disabled={loading || !password}>
+            {loading ? "確認中…" : "開く"}
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // --- ギャラリー画面 ---
+  return (
+    <main style={S.page}>
+      <div style={S.wrap}>
+        <div style={S.header}>
+          <span style={S.headerLogo}>APOLLO</span>
+          <span style={S.badge}>{data.deliveryType === "review" ? "確認用" : "納品"}</span>
+        </div>
+
+        <h1 style={S.title}>{data.name}</h1>
+        {data.shootDate && <p style={S.meta}>撮影日 {data.shootDate}</p>}
+
+        <p style={S.count}>写真 · {data.photos.length}点</p>
+
+        <div style={S.grid}>
+          {data.photos.map((p) => (
+            <div key={p.id} style={S.thumb}>
+              {p.url ? (
+                <img src={p.url} alt={`写真 ${p.seq}`} style={S.img} loading="lazy" />
+              ) : (
+                <span style={S.num}>{String(p.seq).padStart(3, "0")}</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <p style={S.footer}>APOLLO</p>
+      </div>
+    </main>
+  );
+}
+
+const S: Record<string, CSSProperties> = {
+  gate: { minHeight: "100vh", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
+  gateCard: { width: "100%", maxWidth: 360, background: "#fff", border: "0.5px solid #e5e5e5", borderRadius: 12, padding: "36px 28px", textAlign: "center" },
+  logo: { fontSize: 22, fontWeight: 500, letterSpacing: "0.34em", marginBottom: 20 },
+  gateSub: { fontSize: 13, color: "#888", margin: "0 0 20px" },
+  gateInput: { width: "100%", height: 42, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 14px", fontSize: 14, boxSizing: "border-box", marginBottom: 12 },
+  gateBtn: { width: "100%", height: 42, background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: "pointer" },
+  error: { fontSize: 13, color: "#c0392b", margin: "0 0 12px" },
+
+  page: { minHeight: "100vh", background: "#fff", padding: "0 0 60px" },
+  wrap: { maxWidth: 900, margin: "0 auto", padding: "0 24px" },
+  header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0", borderBottom: "0.5px solid #eee", marginBottom: 28 },
+  headerLogo: { fontSize: 18, fontWeight: 500, letterSpacing: "0.3em" },
+  badge: { fontSize: 11, fontWeight: 500, letterSpacing: "0.08em", padding: "3px 10px", borderRadius: 5, background: "#1a1a1a", color: "#fff" },
+  title: { fontSize: 24, fontWeight: 500, margin: "0 0 6px" },
+  meta: { fontSize: 13, color: "#888", margin: "0 0 24px" },
+  count: { fontSize: 12, letterSpacing: "0.12em", color: "#999", margin: "0 0 14px" },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 },
+  thumb: { position: "relative", aspectRatio: "3/2", background: "#f4f4f4", border: "0.5px solid #eee", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" },
+  img: { width: "100%", height: "100%", objectFit: "cover" },
+  num: { fontSize: 12, color: "#bbb" },
+  footer: { textAlign: "center", fontSize: 11, letterSpacing: "0.2em", color: "#ccc", marginTop: 40 },
+};
