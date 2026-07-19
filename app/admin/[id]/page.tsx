@@ -11,6 +11,8 @@ type Project = {
   expires_at: string | null; created_at: string;
 };
 type Ev = { id: string; action: string; meta: Record<string, unknown>; occurred_at: string };
+type PPhoto = { id: string; seq: number; url: string | null; downloadUrl: string | null; filename: string };
+type PVideo = { id: string; seq: number; playUrl: string; downloadUrl: string; filename: string };
 
 const ACTION_LABEL: Record<string, string> = {
   view: "ページを開いた",
@@ -27,6 +29,9 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
   const [events, setEvents] = useState<Ev[]>([]);
   const [loading, setLoading] = useState(true);
   const [newPassword, setNewPassword] = useState<string | null>(null);
+  const [pPhotos, setPPhotos] = useState<PPhoto[]>([]);
+  const [pVideos, setPVideos] = useState<PVideo[]>([]);
+  const [lightbox, setLightbox] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState(false);
 
   const [photoState, setPhotoState] = useState<"idle" | "uploading">("idle");
@@ -48,8 +53,37 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
         }
       })
       .finally(() => setLoading(false));
+
+    fetch(`/api/admin/assets?id=${id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setPPhotos(d.photos ?? []);
+        setPVideos(d.videos ?? []);
+      })
+      .catch(() => {});
   }
   useEffect(load, [id]);
+
+  // ライトボックスのキー操作
+  useEffect(() => {
+    if (lightbox === null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setLightbox(null);
+      if (e.key === "ArrowLeft") setLightbox((i) => (i === null ? i : (i - 1 + pPhotos.length) % pPhotos.length));
+      if (e.key === "ArrowRight") setLightbox((i) => (i === null ? i : (i + 1) % pPhotos.length));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox, pPhotos.length]);
+
+  function saveFile(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 
   async function regenerate() {
     if (!confirm("パスワードを再発行しますか？古いパスワードは使えなくなります。")) return;
@@ -201,6 +235,37 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
           <input ref={videoInput} type="file" accept="video/*" multiple hidden onChange={(e) => uploadVideos(e.target.files)} />
         </section>
 
+        {/* プレビュー */}
+        {(pPhotos.length > 0 || pVideos.length > 0) && (
+          <section style={S.card}>
+            <p style={S.cardLabel}>入っているファイル</p>
+
+            {pVideos.map((v) => (
+              <div key={v.id} style={{ marginBottom: 16 }}>
+                <video src={v.playUrl} controls preload="metadata" style={S.pvVideo} />
+                <div style={S.pvVideoMeta}>
+                  <span style={S.pvName}>{v.filename}</span>
+                  <button style={S.ghost} onClick={() => saveFile(v.downloadUrl, v.filename)}>ダウンロード</button>
+                </div>
+              </div>
+            ))}
+
+            {pPhotos.length > 0 && (
+              <div style={S.pvGrid}>
+                {pPhotos.map((p, i) => (
+                  <div key={p.id} style={S.pvThumb}>
+                    {p.url && <img src={p.url} alt={`写真 ${p.seq}`} style={S.pvImg} loading="lazy" onClick={() => setLightbox(i)} />}
+                    <span style={S.pvSeq}>{String(p.seq).padStart(3, "0")}</span>
+                    {p.downloadUrl && (
+                      <button style={S.pvDl} onClick={() => saveFile(p.downloadUrl!, p.filename)} aria-label="ダウンロード">↓</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ログ */}
         <section style={S.card}>
           <p style={S.cardLabel}>閲覧・ダウンロード履歴</p>
@@ -224,6 +289,19 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
           )}
         </section>
       </div>
+
+      {lightbox !== null && pPhotos[lightbox]?.url && (
+        <div style={S.lb} onClick={() => setLightbox(null)}>
+          <button style={{ ...S.lbBtn, top: 20, right: 24, width: 44, height: 44, fontSize: 18 }}
+            onClick={(e) => { e.stopPropagation(); setLightbox(null); }}>✕</button>
+          <button style={{ ...S.lbBtn, left: 20, top: "50%", transform: "translateY(-50%)", width: 52, height: 52, fontSize: 30 }}
+            onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i === null ? i : (i - 1 + pPhotos.length) % pPhotos.length)); }}>‹</button>
+          <img src={pPhotos[lightbox].url!} alt="" style={S.lbImg} onClick={(e) => e.stopPropagation()} />
+          <button style={{ ...S.lbBtn, right: 20, top: "50%", transform: "translateY(-50%)", width: 52, height: 52, fontSize: 30 }}
+            onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i === null ? i : (i + 1) % pPhotos.length)); }}>›</button>
+          <span style={S.lbCaption}>{lightbox + 1} / {pPhotos.length}</span>
+        </div>
+      )}
     </main>
   );
 }
@@ -250,4 +328,17 @@ const S: Record<string, CSSProperties> = {
   logRow: { display: "flex", gap: 14, padding: "8px 0", borderBottom: "0.5px solid #f0f0f0", fontSize: 13 },
   logTime: { color: "#999", fontFamily: mono, fontSize: 12, whiteSpace: "nowrap" },
   logAction: { color: "#333" },
+
+  pvVideo: { width: "100%", borderRadius: 10, background: "#000", display: "block" },
+  pvVideoMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 8, flexWrap: "wrap" },
+  pvName: { fontSize: 13, color: "#333" },
+  pvGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8 },
+  pvThumb: { position: "relative", aspectRatio: "3/2", background: "#f4f4f4", border: "0.5px solid #eee", borderRadius: 8, overflow: "hidden" },
+  pvImg: { width: "100%", height: "100%", objectFit: "cover", cursor: "pointer", display: "block" },
+  pvSeq: { position: "absolute", bottom: 4, left: 6, fontSize: 10, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.6)", pointerEvents: "none" },
+  pvDl: { position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: 6, background: "rgba(255,255,255,0.9)", border: "0.5px solid #ddd", fontSize: 13, color: "#333", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
+  lb: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 },
+  lbImg: { maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain" },
+  lbBtn: { position: "fixed", background: "rgba(255,255,255,0.12)", color: "#fff", border: "none", borderRadius: 999, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  lbCaption: { position: "fixed", bottom: 24, left: 0, right: 0, textAlign: "center", color: "rgba(255,255,255,0.7)", fontSize: 13 },
 };
