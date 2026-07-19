@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { r2, R2_BUCKET } from "@/lib/r2";
 import { notifyLine } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
-// クライアントが共有リンクを開いてパスワードを入れたときに呼ばれる。
-// 照合OKなら案件情報＋写真を返す。納品(final)のときは原本DL URLも返す。
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { linkId, password } = body as { linkId?: string; password?: string };
@@ -38,48 +39,82 @@ export async function POST(req: Request) {
 
   const { data: assets, error: aErr } = await supabaseAdmin
     .from("assets")
-    .select("id, seq, storage_key, thumb_key, original_filename")
+    .select("id, kind, seq, storage, storage_key, thumb_key, original_filename")
     .eq("project_id", project.id)
-    .eq("kind", "photo")
     .order("seq", { ascending: true });
 
   if (aErr) {
-    return NextResponse.json({ error: "写真の取得に失敗しました" }, { status: 500 });
+    return NextResponse.json({ error: "データの取得に失敗しました" }, { status: 500 });
   }
 
   const photos = [];
-  for (const a of assets ?? []) {
-    const { data: thumb } = await supabaseAdmin.storage
-      .from("thumbnails")
-      .createSignedUrl(a.thumb_key, 3600);
+  const videos = [];
 
-    let downloadUrl: string | null = null;
-    if (isFinal) {
-      const { data: orig } = await supabaseAdmin.storage
-        .from("photos")
-        .createSignedUrl(a.storage_key, 3600, {
-          download: a.original_filename ?? `${String(a.seq).padStart(3, "0")}.jpg`,
-        });
-      downloadUrl = orig?.signedUrl ?? null;
+  for (const a of assets ?? []) {
+    if (a.kind === "photo") {
+      const { data: thumb } = await supabaseAdmin.storage
+        .from("thumbnails")
+        .createSignedUrl(a.thumb_key!, 3600);
+
+      let downloadUrl: string | null = null;
+      if (isFinal) {
+        const { data: orig } = await supabaseAdmin.storage
+          .from("photos")
+          .createSignedUrl(a.storage_key, 3600, {
+            download: a.original_filename ?? `${String(a.seq).padStart(3, "0")}.jpg`,
+          });
+        downloadUrl = orig?.signedUrl ?? null;
+      }
+
+      photos.push({
+        id: a.id,
+        seq: a.seq,
+        url: thumb?.signedUrl ?? null,
+        downloadUrl,
+        filename: a.original_filename ?? `${String(a.seq).padStart(3, "0")}.jpg`,
+      });
     }
 
-    photos.push({
-      id: a.id,
-      seq: a.seq,
-      url: thumb?.signedUrl ?? null,
-      downloadUrl,
-      filename: a.original_filename ?? `${String(a.seq).padStart(3, "0")}.jpg`,
-    });
+    if (a.kind === "video" && a.storage === "r2") {
+      // 再生用の署名付きURL（2時間）。ストリーミング再生に使う。
+      const playUrl = await getSignedUrl(
+        r2,
+        new GetObjectCommand({ Bucket: R2_BUCKET, Key: a.storage_key }),
+        { expiresIn: 7200 }
+      );
+
+      // 納品のみ：ダウンロード用の署名付きURL（添付として保存させる）
+      let downloadUrl: string | null = null;
+      if (isFinal) {
+        downloadUrl = await getSignedUrl(
+          r2,
+          new GetObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: a.storage_key,
+            ResponseContentDisposition: `attachment; filename="${
+              a.original_filename ?? `video-${a.seq}.mp4`
+            }"`,
+          }),
+          { expiresIn: 7200 }
+        );
+      }
+
+      videos.push({
+        id: a.id,
+        seq: a.seq,
+        playUrl,
+        downloadUrl,
+        filename: a.original_filename ?? `video-${a.seq}.mp4`,
+      });
+    }
   }
 
-  // 閲覧イベントを記録
   await supabaseAdmin.from("events").insert({
     project_id: project.id,
     action: "view",
     meta: {},
   });
 
-  // LINE通知：確認用が開かれたときのみ（納品は開通知しない＝DL時に通知するため）
   if (!isFinal) {
     await notifyLine(`👀 ${project.name}（確認用）が開かれました`);
   }
@@ -90,5 +125,6 @@ export async function POST(req: Request) {
     deliveryType: project.delivery_type,
     selectEnabled: project.select_enabled,
     photos,
+    videos,
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use, useCallback, useEffect, type CSSProperties } from "react";
+import { useState, use, useRef, useCallback, useEffect, type CSSProperties } from "react";
 import JSZip from "jszip";
 
 type Photo = {
@@ -10,12 +10,20 @@ type Photo = {
   downloadUrl: string | null;
   filename: string;
 };
+type Video = {
+  id: string;
+  seq: number;
+  playUrl: string;
+  downloadUrl: string | null;
+  filename: string;
+};
 type Data = {
   name: string;
   shootDate: string | null;
   deliveryType: "review" | "final";
   selectEnabled: boolean;
   photos: Photo[];
+  videos: Video[];
 };
 
 export default function DeliveryPage({ params }: { params: Promise<{ linkId: string }> }) {
@@ -67,6 +75,18 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox, close, prev, next]);
+
+  // 動画の再生通知（サーバー側で初回のみLINEへ）
+  const playedRef = useRef(false);
+  function onPlay() {
+    if (playedRef.current) return;
+    playedRef.current = true;
+    fetch("/api/play-notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId }),
+    }).catch(() => {});
+  }
 
   // 個別ダウンロード
   function downloadOne(p: Photo) {
@@ -123,6 +143,22 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     }
   }
 
+  // 動画のダウンロード（納品のみ）
+  function downloadVideo(v: Video) {
+    if (!v.downloadUrl) return;
+    const a = document.createElement("a");
+    a.href = v.downloadUrl;
+    a.download = v.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    fetch("/api/download-notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId, kind: "single" }),
+    }).catch(() => {});
+  }
+
   // --- パスワード画面 ---
   if (!data) {
     return (
@@ -161,6 +197,33 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
 
         <h1 style={S.title}>{data.name}</h1>
         {data.shootDate && <p style={S.meta}>撮影日 {data.shootDate}</p>}
+
+        {data.videos && data.videos.length > 0 && (
+          <div style={S.videoSection}>
+            <p style={S.count}>ムービー · {data.videos.length}本</p>
+            {data.videos.map((v) => (
+              <div key={v.id} style={S.videoBlock}>
+                <video
+                  src={v.playUrl}
+                  controls
+                  preload="metadata"
+                  controlsList={isFinal ? undefined : "nodownload"}
+                  onContextMenu={(e) => !isFinal && e.preventDefault()}
+                  onPlay={onPlay}
+                  style={S.video}
+                />
+                <div style={S.videoMeta}>
+                  <span style={S.videoName}>{v.filename}</span>
+                  {isFinal && v.downloadUrl ? (
+                    <button style={S.videoDl} onClick={() => downloadVideo(v)}>ダウンロード</button>
+                  ) : (
+                    <span style={S.videoNote}>確認用のためダウンロードできません</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={S.barRow}>
           <p style={S.count}>写真 · {data.photos.length}点</p>
@@ -244,4 +307,12 @@ const S: Record<string, CSSProperties> = {
   lbBottom: { position: "fixed", bottom: 20, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
   lbCaption: { color: "rgba(255,255,255,0.7)", fontSize: 13 },
   lbDl: { background: "#fff", color: "#1a1a1a", border: "none", borderRadius: 8, height: 38, padding: "0 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+
+  videoSection: { margin: "0 0 32px" },
+  videoBlock: { marginTop: 12 },
+  video: { width: "100%", borderRadius: 12, background: "#000", display: "block" },
+  videoMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 10, flexWrap: "wrap" },
+  videoName: { fontSize: 14, color: "#333" },
+  videoNote: { fontSize: 12, color: "#999" },
+  videoDl: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 36, padding: "0 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
 };
