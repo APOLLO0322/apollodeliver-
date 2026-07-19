@@ -34,6 +34,9 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
   const [data, setData] = useState<Data | null>(null);
 
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [zipping, setZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 });
 
@@ -143,6 +146,35 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     }
   }
 
+  // ☆セレクト
+  function toggleSelect(seq: number) {
+    const key = String(seq).padStart(3, "0");
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setSubmitted(false);
+  }
+
+  async function submitSelection() {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/select-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkId, numbers: Array.from(selected) }),
+      });
+      if (res.ok) setSubmitted(true);
+      else alert("送信に失敗しました");
+    } catch {
+      alert("送信に失敗しました");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   // 動画のダウンロード（納品のみ）
   function downloadVideo(v: Video) {
     if (!v.downloadUrl) return;
@@ -246,9 +278,26 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
               {isFinal && p.downloadUrl && (
                 <button style={S.dlOne} onClick={() => downloadOne(p)} aria-label="ダウンロード">↓</button>
               )}
+              {!isFinal && data.selectEnabled && (
+                <button
+                  style={{ ...S.star, ...(selected.has(String(p.seq).padStart(3, "0")) ? S.starOn : {}) }}
+                  onClick={() => toggleSelect(p.seq)}
+                  aria-label="この写真を選択"
+                >★</button>
+              )}
+              <span style={S.seqTag}>{String(p.seq).padStart(3, "0")}</span>
             </div>
           ))}
         </div>
+
+        {!isFinal && data.selectEnabled && (
+          <div style={S.selectBar}>
+            <span style={S.selectCount}>★ {selected.size}点を選択中</span>
+            <button style={S.selectBtn} onClick={submitSelection} disabled={submitting || selected.size === 0}>
+              {submitting ? "送信中…" : submitted ? "送信しました ✓" : "選択をAPOLLOに送る"}
+            </button>
+          </div>
+        )}
 
         <p style={S.footer}>APOLLO</p>
       </div>
@@ -315,4 +364,11 @@ const S: Record<string, CSSProperties> = {
   videoName: { fontSize: 14, color: "#333" },
   videoNote: { fontSize: 12, color: "#999" },
   videoDl: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 36, padding: "0 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+
+  star: { position: "absolute", top: 6, right: 6, width: 28, height: 28, borderRadius: 999, background: "rgba(255,255,255,0.9)", border: "0.5px solid #ddd", fontSize: 14, color: "#bbb", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 },
+  starOn: { background: "#1a1a1a", borderColor: "#1a1a1a", color: "#fff" },
+  seqTag: { position: "absolute", bottom: 6, left: 8, fontSize: 11, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.6)", pointerEvents: "none" },
+  selectBar: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 24, padding: "16px 0", borderTop: "0.5px solid #eee", flexWrap: "wrap" },
+  selectCount: { fontSize: 13, color: "#555" },
+  selectBtn: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 40, padding: "0 20px", fontSize: 14, fontWeight: 500, cursor: "pointer" },
 };
