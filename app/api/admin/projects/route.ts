@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function GET() {
   const { data: projects, error } = await supabaseAdmin
     .from("projects")
-    .select("id, link_id, name, shoot_date, delivery_type, select_enabled, expires_at, created_at")
+    .select("id, link_id, name, shoot_date, delivery_type, select_enabled, expires_at, created_at, purged_at")
     .order("created_at", { ascending: false });
 
   if (error) {

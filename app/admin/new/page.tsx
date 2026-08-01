@@ -3,6 +3,7 @@
 import { useState, useRef, type CSSProperties } from "react";
 import imageCompression from "browser-image-compression";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { microPreviewFromImage, microPreviewFromVideo } from "@/lib/micro-preview";
 
 type Created = { id: string; url: string; password: string; linkId: string };
 type UploadState = "idle" | "uploading" | "done";
@@ -75,11 +76,12 @@ export default function NewDeliveryPage() {
         const file = photos[i];
         const slot = slots[i];
         const thumb = await imageCompression(file, { maxWidthOrHeight: 2000, maxSizeMB: 1.5, useWebWorker: true, fileType: "image/jpeg" });
+        const micro = await microPreviewFromImage(file);
         const up1 = await supabaseBrowser.storage.from("photos").uploadToSignedUrl(slot.originalUpload.path, slot.originalUpload.token, file);
         if (up1.error) throw new Error(`原本の保存に失敗: ${up1.error.message}`);
         const up2 = await supabaseBrowser.storage.from("thumbnails").uploadToSignedUrl(slot.thumbUpload.path, slot.thumbUpload.token, thumb);
         if (up2.error) throw new Error(`軽量版の保存に失敗: ${up2.error.message}`);
-        recorded.push({ seq: slot.seq, originalKey: slot.originalKey, thumbKey: slot.thumbKey, originalFilename: file.name, sizeBytes: file.size });
+        recorded.push({ seq: slot.seq, originalKey: slot.originalKey, thumbKey: slot.thumbKey, originalFilename: file.name, sizeBytes: file.size, microPreview: micro });
         setPhotoProgress({ done: i + 1, total: photos.length });
       }
       const doneRes = await fetch("/api/upload-complete", {
@@ -117,6 +119,8 @@ export default function NewDeliveryPage() {
         const urlData = await urlRes.json();
         if (!urlRes.ok) throw new Error(urlData.error ?? "URL発行に失敗");
 
+        const microV = await microPreviewFromVideo(file);
+
         // ② R2へ直接PUT（進捗つき）
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
@@ -134,7 +138,7 @@ export default function NewDeliveryPage() {
         const doneRes = await fetch("/api/video-upload-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: project.id, seq: urlData.seq, key: urlData.key, filename: file.name, sizeBytes: file.size }),
+          body: JSON.stringify({ projectId: project.id, seq: urlData.seq, key: urlData.key, filename: file.name, sizeBytes: file.size, microPreview: microV }),
         });
         const doneData = await doneRes.json();
         if (!doneRes.ok) throw new Error(doneData.error ?? "記録に失敗");
