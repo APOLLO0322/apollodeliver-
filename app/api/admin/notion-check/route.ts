@@ -9,19 +9,16 @@ export async function GET() {
   }
 
   try {
-    const db = await notion.databases.retrieve({ database_id: NOTION_DELIVERY_DB_ID });
+    // 型が複雑なので any で受ける（疎通確認用）
+    const db = (await notion.databases.retrieve({ database_id: NOTION_DELIVERY_DB_ID })) as any;
 
-    const properties = "properties" in db
-      ? Object.entries(db.properties).map(([name, def]) => ({ name, type: (def as { type: string }).type }))
-      : [];
-
-    const title = "title" in db && Array.isArray(db.title) && db.title[0]
-      ? (db.title[0] as { plain_text: string }).plain_text
-      : "(無題)";
+    const properties = Object.entries(db.properties ?? {}).map(
+      ([name, def]) => ({ name, type: (def as any).type })
+    );
 
     return NextResponse.json({
       ok: true,
-      databaseTitle: title,
+      databaseTitle: db.title?.[0]?.plain_text ?? "(無題)",
       propertyCount: properties.length,
       properties,
     });
