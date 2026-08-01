@@ -378,6 +378,4 @@ const S: Record<string, CSSProperties> = {
   selectBar: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 24, padding: "16px 0", borderTop: "0.5px solid #eee", flexWrap: "wrap" },
   selectCount: { fontSize: 13, color: "#555" },
   selectBtn: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 40, padding: "0 20px", fontSize: 14, fontWeight: 500, cursor: "pointer" },
-};git add -A
-git commit -m "ダークモードで文字が消える問題を修正＋確認用の軽量版注意書き"
-git push
+};
