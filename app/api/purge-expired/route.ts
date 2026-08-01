@@ -3,6 +3,7 @@ import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { r2, R2_BUCKET } from "@/lib/r2";
 import { notifyLine } from "@/lib/notify";
+import { findUnhandledDeliveries } from "@/lib/notion-delivery";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -87,6 +88,19 @@ export async function GET(req: Request) {
     await notifyLine(
       `🗑 期限切れの納品データを削除しました（${results.length}件）\n${results.join("\n")}\n※プレビューと履歴は管理画面に残っています`
     );
+  }
+
+  // 納品期限が近い/過ぎているのにポータル未作成の案件をNotionから探して通知
+  try {
+    const unhandled = await findUnhandledDeliveries(3);
+    if (unhandled.length > 0) {
+      const lines = unhandled
+        .map((d) => `・${d.name}${d.dueDate ? `（期限 ${d.dueDate}）` : ""}`)
+        .join("\n");
+      await notifyLine(`⏰ 納品リンク未発行の案件があります（${unhandled.length}件）\n${lines}`);
+    }
+  } catch (e) {
+    console.error("[purge] 未対応通知の取得に失敗:", e);
   }
 
   return NextResponse.json({ purged: results.length, projects: results });

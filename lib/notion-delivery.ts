@@ -48,3 +48,31 @@ export async function markNotionDelivered(pageId: string): Promise<void> {
     properties: { "ステータス": { status: { name: "納品済み" } } },
   });
 }
+
+// 納品期限が近い/過ぎている かつ ポータル未作成 の案件を探す（未対応通知用）
+export async function findUnhandledDeliveries(withinDays = 3): Promise<
+  { name: string; dueDate: string | null }[]
+> {
+  const limit = new Date();
+  limit.setDate(limit.getDate() + withinDays);
+  const limitStr = limit.toISOString().slice(0, 10);
+
+  const res = await (notion as any).dataSources.query({
+    data_source_id: NOTION_DATA_SOURCE_ID,
+    filter: {
+      and: [
+        { property: "ポータル作成済み", checkbox: { equals: false } },
+        { property: "納品期限", date: { on_or_before: limitStr } },
+      ],
+    },
+  });
+
+  return res.results.map((page: any) => {
+    const titleProp = page.properties?.["納品件名"]?.title;
+    const dueProp = page.properties?.["納品期限"]?.date;
+    return {
+      name: titleProp?.[0]?.plain_text ?? "(無題)",
+      dueDate: dueProp?.start ?? null,
+    };
+  });
+}
