@@ -71,7 +71,7 @@ export default function NewDeliveryPage() {
         thumbUpload: { token: string; path: string };
       }[];
 
-      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; }[] = [];
+      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; microPreview: string; }[] = [];
       for (let i = 0; i < photos.length; i++) {
         const file = photos[i];
         const slot = slots[i];
