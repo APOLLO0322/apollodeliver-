@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createNotionDelivery } from "@/lib/notion-delivery";
+import { createNotionDelivery, updateNotionDeliveryOnCreate } from "@/lib/notion-delivery";
 
 export const runtime = "nodejs";
 
@@ -25,7 +25,10 @@ export async function POST(req: Request) {
     deleteAfterDays,
     dueDate,        // 納品期限（任意）
     chargeAmount,   // 請求予定金額（任意）
-    customerPageId, // 顧客リレーション（任意・今は未使用）
+    customerPageId, // 顧客リレーション（任意）
+    existingNotionPageId, // 既存Notion案件から作る場合のページID
+    photoDownloadLimit, // 写真のDL数制限（null=無制限）
+    videoDownloadLimit, // 動画のDL数制限（null=無制限）
   } = body;
 
   if (!name || typeof name !== "string") {
@@ -55,6 +58,8 @@ export async function POST(req: Request) {
       select_enabled: selectEnabled,
       password_hash: passwordHash,
       expires_at: expiresAt,
+      photo_download_limit: typeof photoDownloadLimit === "number" && photoDownloadLimit > 0 ? photoDownloadLimit : null,
+      video_download_limit: typeof videoDownloadLimit === "number" && videoDownloadLimit > 0 ? videoDownloadLimit : null,
     })
     .select("id, link_id")
     .single();
@@ -66,22 +71,35 @@ export async function POST(req: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://apollodeliver.vercel.app";
   const portalUrl = `${baseUrl}/d/${data.link_id}`;
 
-  // 2. Notion納品DBにも書き込む（失敗しても案件作成自体は成功扱いにする）
+  // 2. Notionへの書き込み（失敗しても案件作成自体は成功扱い）
   let notionPageId: string | null = null;
   let notionError: string | null = null;
+  const deleteDate = expiresAt ? expiresAt.slice(0, 10) : null;
   try {
-    notionPageId = await createNotionDelivery({
-      name,
-      shootDate: shootDate || null,
-      deliveryType,
-      chargeAmount: typeof chargeAmount === "number" ? chargeAmount : null,
-      dueDate: dueDate || null,
-      portalUrl,
-      portalProjectId: data.id,
-      deleteDate: expiresAt ? expiresAt.slice(0, 10) : null,
-      customerPageId: customerPageId || null,
-    });
-    // NotionページIDをポータル側にも保存（後で納品済み更新に使う）
+    if (existingNotionPageId) {
+      // 既存Notion案件から作成 → そのページに書き戻す
+      await updateNotionDeliveryOnCreate({
+        pageId: existingNotionPageId,
+        deliveryType,
+        portalUrl,
+        portalProjectId: data.id,
+        deleteDate,
+      });
+      notionPageId = existingNotionPageId;
+    } else {
+      // 新規作成 → Notionに新しいページを作る
+      notionPageId = await createNotionDelivery({
+        name,
+        shootDate: shootDate || null,
+        deliveryType,
+        chargeAmount: typeof chargeAmount === "number" ? chargeAmount : null,
+        dueDate: dueDate || null,
+        portalUrl,
+        portalProjectId: data.id,
+        deleteDate,
+        customerPageId: customerPageId || null,
+      });
+    }
     await supabaseAdmin.from("projects").update({ notion_page_id: notionPageId }).eq("id", data.id);
   } catch (e) {
     notionError = e instanceof Error ? e.message : String(e);

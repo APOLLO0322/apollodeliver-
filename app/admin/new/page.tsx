@@ -16,6 +16,8 @@ export default function NewDeliveryPage() {
   const [deleteAfterDays, setDeleteAfterDays] = useState(30);
   const [dueDate, setDueDate] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
+  const [photoLimit, setPhotoLimit] = useState("");
+  const [videoLimit, setVideoLimit] = useState("");
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -66,7 +68,7 @@ export default function NewDeliveryPage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays, dueDate: dueDate || null, chargeAmount: chargeAmount ? Number(chargeAmount) : null, customerPageId: mode === 'new' ? (customerId || null) : null, existingNotionPageId: mode === 'existing' ? (existingPageId || null) : null }),
+        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays, dueDate: dueDate || null, chargeAmount: chargeAmount ? Number(chargeAmount) : null, customerPageId: mode === 'new' ? (customerId || null) : null, existingNotionPageId: mode === 'existing' ? (existingPageId || null) : null, photoDownloadLimit: deliveryType === 'final' && photoLimit ? Number(photoLimit) : null, videoDownloadLimit: deliveryType === 'final' && videoLimit ? Number(videoLimit) : null }),
       });
       const data = await res.json();
       if (res.ok) setProject(data);
@@ -256,6 +258,23 @@ export default function NewDeliveryPage() {
           </div>
         </div>
 
+        {deliveryType === "final" && !project && (
+          <div style={S.limitBox}>
+            <p style={S.limitLabel}>ダウンロード数の制限（任意・空欄で無制限）</p>
+            <div style={S.row}>
+              <div>
+                <label style={S.label}>写真</label>
+                <input style={{ ...S.input, width: 120 }} type="number" min="1" value={photoLimit} onChange={(e) => setPhotoLimit(e.target.value)} placeholder="例: 3" />
+              </div>
+              <div>
+                <label style={S.label}>動画</label>
+                <input style={{ ...S.input, width: 120 }} type="number" min="1" value={videoLimit} onChange={(e) => setVideoLimit(e.target.value)} placeholder="例: 1" />
+              </div>
+            </div>
+            <p style={S.hint}>指定すると、クライアントはその数ちょうどを選んでダウンロードします。</p>
+          </div>
+        )}
+
         {deliveryType === "review" && !project && (
           <label style={S.check}>
             <input type="checkbox" checked={selectEnabled} onChange={(e) => setSelectEnabled(e.target.checked)} />
@@ -359,6 +378,8 @@ const S: Record<string, CSSProperties> = {
   mono: { flex: 1, height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: mono, background: "#fff", boxSizing: "border-box", color: "#1a1a1a" },
   ghost: { height: 38, padding: "0 14px", background: "#fff", border: "0.5px solid #d4d4d4", borderRadius: 8, fontSize: 13, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   hint: { fontSize: 12, color: "#999", margin: "8px 0 0", lineHeight: 1.6 },
+  limitBox: { marginTop: 4, marginBottom: 4, padding: "14px 16px", background: "#fafafa", border: "0.5px solid #eee", borderRadius: 10 },
+  limitLabel: { fontSize: 13, color: "#555", margin: "0 0 10px" },
   notionOk: { fontSize: 13, color: "#2d7a4a", margin: "16px 0 0" },
   notionWarn: { fontSize: 13, color: "#a15c00", background: "#fdf6ec", border: "0.5px solid #f0dfc0", borderRadius: 8, padding: "10px 12px", margin: "16px 0 0", lineHeight: 1.6 },
 };

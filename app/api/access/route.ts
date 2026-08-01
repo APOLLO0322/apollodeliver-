@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
   const { data: project, error: pErr } = await supabaseAdmin
     .from("projects")
-    .select("id, name, shoot_date, delivery_type, select_enabled, password_hash, expires_at")
+    .select("id, name, shoot_date, delivery_type, select_enabled, password_hash, expires_at, photo_download_limit, video_download_limit")
     .eq("link_id", linkId)
     .single();
 
@@ -124,6 +124,8 @@ export async function POST(req: Request) {
     shootDate: project.shoot_date,
     deliveryType: project.delivery_type,
     selectEnabled: project.select_enabled,
+    photoDownloadLimit: isFinal ? project.photo_download_limit : null,
+    videoDownloadLimit: isFinal ? project.video_download_limit : null,
     photos,
     videos,
   });

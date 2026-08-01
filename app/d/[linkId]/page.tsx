@@ -22,6 +22,8 @@ type Data = {
   shootDate: string | null;
   deliveryType: "review" | "final";
   selectEnabled: boolean;
+  photoDownloadLimit: number | null;
+  videoDownloadLimit: number | null;
   photos: Photo[];
   videos: Video[];
 };
@@ -37,6 +39,8 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [dlPhotos, setDlPhotos] = useState<Set<string>>(new Set());
+  const [dlVideos, setDlVideos] = useState<Set<string>>(new Set());
   const [zipping, setZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 });
 
@@ -175,6 +179,60 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     }
   }
 
+  // 制限つきDL：選択トグル
+  function toggleDlPhoto(id: string) {
+    setDlPhotos((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleDlVideo(id: string) {
+    setDlVideos((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  // 制限つきDL：選択したものをまとめてダウンロード（数チェック付き）
+  async function downloadSelected() {
+    if (!data) return;
+    const pLimit = data.photoDownloadLimit;
+    const vLimit = data.videoDownloadLimit;
+    if (pLimit != null && dlPhotos.size !== pLimit) {
+      alert(`写真はちょうど${pLimit}点を選択してください（現在 ${dlPhotos.size}点）`);
+      return;
+    }
+    if (vLimit != null && dlVideos.size !== vLimit) {
+      alert(`動画はちょうど${vLimit}本を選択してください（現在 ${dlVideos.size}本）`);
+      return;
+    }
+    const photos = data.photos.filter((p) => dlPhotos.has(p.id) && p.downloadUrl);
+    const videos = data.videos.filter((v) => dlVideos.has(v.id) && v.downloadUrl);
+    if (photos.length === 0 && videos.length === 0) { alert("ダウンロードする項目を選択してください"); return; }
+
+    setZipping(true);
+    setZipProgress({ done: 0, total: photos.length + videos.length });
+    try {
+      const zip = new JSZip();
+      let done = 0;
+      for (const p of photos) {
+        const blob = await (await fetch(p.downloadUrl!)).blob();
+        zip.file(p.filename, blob);
+        setZipProgress({ done: ++done, total: photos.length + videos.length });
+      }
+      for (const v of videos) {
+        const blob = await (await fetch(v.downloadUrl!)).blob();
+        zip.file(v.filename, blob);
+        setZipProgress({ done: ++done, total: photos.length + videos.length });
+      }
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${data.name}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      fetch("/api/download-notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkId, kind: "bulk", count: photos.length + videos.length }) }).catch(() => {});
+    } catch {
+      alert("ダウンロードに失敗しました");
+    } finally {
+      setZipping(false);
+    }
+  }
+
   // 動画のダウンロード（納品のみ）
   function downloadVideo(v: Video) {
     if (!v.downloadUrl) return;
@@ -216,6 +274,9 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
   }
 
   const isFinal = data.deliveryType === "final";
+  const photoLimited = isFinal && data.photoDownloadLimit != null;
+  const videoLimited = isFinal && data.videoDownloadLimit != null;
+  const anyLimited = photoLimited || videoLimited;
   const current = lightbox !== null ? data.photos[lightbox] : null;
 
   // --- ギャラリー画面 ---
@@ -238,7 +299,7 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
 
         {data.videos && data.videos.length > 0 && (
           <div style={S.videoSection}>
-            <p style={S.count}>ムービー · {data.videos.length}本</p>
+            <p style={S.count}>ムービー · {data.videos.length}本{videoLimited ? `（ちょうど${data.videoDownloadLimit}本選択：${dlVideos.size}/${data.videoDownloadLimit}）` : ""}</p>
             {data.videos.map((v) => (
               <div key={v.id} style={S.videoBlock}>
                 <video
@@ -252,7 +313,12 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
                 />
                 <div style={S.videoMeta}>
                   <span style={S.videoName}>{v.filename}</span>
-                  {isFinal && v.downloadUrl ? (
+                  {isFinal && v.downloadUrl && videoLimited ? (
+                    <button
+                      style={dlVideos.has(v.id) ? S.videoDlOn : S.videoDlOff}
+                      onClick={() => toggleDlVideo(v.id)}
+                    >{dlVideos.has(v.id) ? "✓ 選択中" : "ダウンロードに選択"}</button>
+                  ) : isFinal && v.downloadUrl ? (
                     <button style={S.videoDl} onClick={() => downloadVideo(v)}>ダウンロード</button>
                   ) : (
                     <span style={S.videoNote}>確認用のためダウンロードできません</span>
@@ -265,10 +331,13 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
 
         <div style={S.barRow}>
           <p style={S.count}>写真 · {data.photos.length}点</p>
-          {isFinal && (
+          {isFinal && !anyLimited && (
             <button style={S.dlAll} onClick={downloadAll} disabled={zipping}>
               {zipping ? `準備中… ${zipProgress.done}/${zipProgress.total}` : "すべてダウンロード (ZIP)"}
             </button>
+          )}
+          {photoLimited && (
+            <span style={S.limitNote}>写真をちょうど {data.photoDownloadLimit} 点選択（{dlPhotos.size}/{data.photoDownloadLimit}）</span>
           )}
         </div>
 
@@ -281,8 +350,15 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
               ) : (
                 <span style={S.num}>{String(p.seq).padStart(3, "0")}</span>
               )}
-              {isFinal && p.downloadUrl && (
+              {isFinal && p.downloadUrl && !photoLimited && (
                 <button style={S.dlOne} onClick={() => downloadOne(p)} aria-label="ダウンロード">↓</button>
+              )}
+              {photoLimited && p.downloadUrl && (
+                <button
+                  style={{ ...S.dlCheck, ...(dlPhotos.has(p.id) ? S.dlCheckOn : {}) }}
+                  onClick={() => toggleDlPhoto(p.id)}
+                  aria-label="ダウンロードに選択"
+                >{dlPhotos.has(p.id) ? "✓" : ""}</button>
               )}
               {!isFinal && data.selectEnabled && (
                 <button
@@ -301,6 +377,19 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
             <span style={S.selectCount}>★ {selected.size}点を選択中</span>
             <button style={S.selectBtn} onClick={submitSelection} disabled={submitting || selected.size === 0}>
               {submitting ? "送信中…" : submitted ? "送信しました ✓" : "選択をAPOLLOに送る"}
+            </button>
+          </div>
+        )}
+
+        {anyLimited && (
+          <div style={S.dlBar}>
+            <span style={S.dlBarText}>
+              {photoLimited && `写真 ${dlPhotos.size}/${data.photoDownloadLimit}`}
+              {photoLimited && videoLimited && "　"}
+              {videoLimited && `動画 ${dlVideos.size}/${data.videoDownloadLimit}`}
+            </span>
+            <button style={S.dlBarBtn} onClick={downloadSelected} disabled={zipping}>
+              {zipping ? `準備中… ${zipProgress.done}/${zipProgress.total}` : "選択したものをダウンロード"}
             </button>
           </div>
         )}
@@ -352,6 +441,14 @@ const S: Record<string, CSSProperties> = {
   img: { width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" },
   num: { fontSize: 12, color: "#bbb" },
   dlOne: { position: "absolute", top: 6, right: 6, width: 28, height: 28, borderRadius: 6, background: "rgba(255,255,255,0.9)", border: "0.5px solid #ddd", fontSize: 15, color: "#333", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  dlCheck: { position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: 999, background: "rgba(255,255,255,0.9)", border: "1px solid #bbb", fontSize: 14, color: "#1a1a1a", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
+  dlCheckOn: { background: "#1a1a1a", borderColor: "#1a1a1a", color: "#fff" },
+  limitNote: { fontSize: 12, color: "#a15c00" },
+  videoDlOff: { background: "#fff", color: "#555", border: "0.5px solid #d4d4d4", borderRadius: 8, height: 36, padding: "0 14px", fontSize: 13, cursor: "pointer" },
+  videoDlOn: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 36, padding: "0 14px", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+  dlBar: { position: "sticky", bottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", marginTop: 24, background: "#fff", border: "0.5px solid #e5e5e5", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  dlBarText: { fontSize: 13, color: "#333" },
+  dlBarBtn: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 40, padding: "0 20px", fontSize: 14, fontWeight: 500, cursor: "pointer" },
   footer: { textAlign: "center", fontSize: 11, letterSpacing: "0.2em", color: "#ccc", marginTop: 40 },
 
   lb: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 },
