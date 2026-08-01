@@ -86,7 +86,7 @@ export default function AdminListPage() {
 }
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#fafafa", padding: "40px 16px 80px" },
+  page: { minHeight: "100vh", colorScheme: "light", background: "#fafafa", padding: "40px 16px 80px" },
   wrap: { maxWidth: 820, margin: "0 auto" },
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 },
   logo: { fontSize: 18, fontWeight: 500, letterSpacing: "0.3em" },

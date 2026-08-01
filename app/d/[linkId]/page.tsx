@@ -328,7 +328,7 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
 }
 
 const S: Record<string, CSSProperties> = {
-  gate: { minHeight: "100vh", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
+  gate: { minHeight: "100vh", colorScheme: "light", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 },
   gateCard: { width: "100%", maxWidth: 360, background: "#fff", border: "0.5px solid #e5e5e5", borderRadius: 12, padding: "36px 28px", textAlign: "center" },
   logo: { fontSize: 22, fontWeight: 500, letterSpacing: "0.34em", marginBottom: 20 },
   gateSub: { fontSize: 13, color: "#888", margin: "0 0 20px" },
@@ -336,7 +336,7 @@ const S: Record<string, CSSProperties> = {
   gateBtn: { width: "100%", height: 42, background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: "pointer" },
   error: { fontSize: 13, color: "#c0392b", margin: "0 0 12px" },
 
-  page: { minHeight: "100vh", background: "#fff", padding: "0 0 60px" },
+  page: { minHeight: "100vh", colorScheme: "light", background: "#fff", padding: "0 0 60px" },
   wrap: { maxWidth: 900, margin: "0 auto", padding: "0 24px" },
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0", borderBottom: "0.5px solid #eee", marginBottom: 28 },
   headerLogo: { fontSize: 18, fontWeight: 500, letterSpacing: "0.3em" },
@@ -378,4 +378,6 @@ const S: Record<string, CSSProperties> = {
   selectBar: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 24, padding: "16px 0", borderTop: "0.5px solid #eee", flexWrap: "wrap" },
   selectCount: { fontSize: 13, color: "#555" },
   selectBtn: { background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, height: 40, padding: "0 20px", fontSize: 14, fontWeight: 500, cursor: "pointer" },
-};
+};git add -A
+git commit -m "ダークモードで文字が消える問題を修正＋確認用の軽量版注意書き"
+git push

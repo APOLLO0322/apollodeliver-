@@ -253,11 +253,11 @@ export default function NewDeliveryPage() {
 const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#fafafa", padding: "48px 16px", display: "flex", justifyContent: "center" },
+  page: { minHeight: "100vh", colorScheme: "light", background: "#fafafa", padding: "48px 16px", display: "flex", justifyContent: "center" },
   card: { width: "100%", maxWidth: 560, background: "#fff", border: "0.5px solid #e5e5e5", borderRadius: 12, padding: "32px 28px" },
   h1: { fontSize: 20, fontWeight: 500, margin: "0 0 24px", letterSpacing: "0.02em" },
   label: { display: "block", fontSize: 13, color: "#888", margin: "0 0 6px" },
-  input: { width: "100%", height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 14, boxSizing: "border-box", marginBottom: 16, background: "#fff" },
+  input: { width: "100%", height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 14, boxSizing: "border-box", marginBottom: 16, background: "#fff", color: "#1a1a1a" },
   row: { display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" },
   seg: { display: "inline-flex", border: "0.5px solid #e5e5e5", borderRadius: 8, overflow: "hidden", marginBottom: 16 },
   segOn: { border: "none", background: "#1a1a1a", color: "#fff", fontSize: 13, fontWeight: 500, padding: "0 16px", height: 38, cursor: "pointer" },
@@ -274,7 +274,7 @@ const S: Record<string, CSSProperties> = {
   result: { marginTop: 24, padding: 16, background: "#fafafa", border: "0.5px solid #e5e5e5", borderRadius: 12 },
   resultLabel: { fontSize: 12, letterSpacing: "0.1em", color: "#888", margin: "0 0 10px" },
   resultRow: { display: "flex", gap: 8, marginBottom: 8 },
-  mono: { flex: 1, height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: mono, background: "#fff", boxSizing: "border-box" },
+  mono: { flex: 1, height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: mono, background: "#fff", boxSizing: "border-box", color: "#1a1a1a" },
   ghost: { height: 38, padding: "0 14px", background: "#fff", border: "0.5px solid #d4d4d4", borderRadius: 8, fontSize: 13, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   hint: { fontSize: 12, color: "#999", margin: "8px 0 0", lineHeight: 1.6 },
 };

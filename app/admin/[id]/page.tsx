@@ -309,7 +309,7 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
 const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const S: Record<string, CSSProperties> = {
-  page: { minHeight: "100vh", background: "#fafafa", padding: "32px 16px 80px" },
+  page: { minHeight: "100vh", colorScheme: "light", background: "#fafafa", padding: "32px 16px 80px" },
   wrap: { maxWidth: 720, margin: "0 auto" },
   back: { fontSize: 13, color: "#888", textDecoration: "none", display: "inline-block", marginBottom: 20 },
   titleRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 },
