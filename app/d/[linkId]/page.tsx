@@ -230,6 +230,12 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
         <h1 style={S.title}>{data.name}</h1>
         {data.shootDate && <p style={S.meta}>撮影日 {data.shootDate}</p>}
 
+        {!isFinal && (
+          <div style={S.notice}>
+            このデータは確認用のため、軽量版で表示しています。ダウンロードはできません。
+          </div>
+        )}
+
         {data.videos && data.videos.length > 0 && (
           <div style={S.videoSection}>
             <p style={S.count}>ムービー · {data.videos.length}本</p>
@@ -335,6 +341,7 @@ const S: Record<string, CSSProperties> = {
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 0", borderBottom: "0.5px solid #eee", marginBottom: 28 },
   headerLogo: { fontSize: 18, fontWeight: 500, letterSpacing: "0.3em" },
   badge: { fontSize: 11, fontWeight: 500, letterSpacing: "0.08em", padding: "3px 10px", borderRadius: 5, background: "#1a1a1a", color: "#fff" },
+  notice: { fontSize: 13, color: "#8a6d3b", background: "#fcf8ee", border: "0.5px solid #ece0c4", borderRadius: 8, padding: "10px 14px", margin: "0 0 24px", lineHeight: 1.6 },
   title: { fontSize: 24, fontWeight: 500, margin: "0 0 6px" },
   meta: { fontSize: 13, color: "#888", margin: "0 0 24px" },
   barRow: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 14px", flexWrap: "wrap", gap: 10 },
