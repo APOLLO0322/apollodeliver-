@@ -5,7 +5,7 @@ import imageCompression from "browser-image-compression";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { microPreviewFromImage, microPreviewFromVideo } from "@/lib/micro-preview";
 
-type Created = { id: string; url: string; password: string; linkId: string };
+type Created = { id: string; url: string; password: string; linkId: string; notionSynced?: boolean; notionError?: string | null };
 type UploadState = "idle" | "uploading" | "done";
 
 export default function NewDeliveryPage() {
@@ -14,6 +14,8 @@ export default function NewDeliveryPage() {
   const [deliveryType, setDeliveryType] = useState<"review" | "final">("review");
   const [selectEnabled, setSelectEnabled] = useState(false);
   const [deleteAfterDays, setDeleteAfterDays] = useState(30);
+  const [dueDate, setDueDate] = useState("");
+  const [chargeAmount, setChargeAmount] = useState("");
 
   const [creating, setCreating] = useState(false);
   const [project, setProject] = useState<Created | null>(null);
@@ -39,7 +41,7 @@ export default function NewDeliveryPage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays }),
+        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays, dueDate: dueDate || null, chargeAmount: chargeAmount ? Number(chargeAmount) : null }),
       });
       const data = await res.json();
       if (res.ok) setProject(data);
@@ -71,7 +73,7 @@ export default function NewDeliveryPage() {
         thumbUpload: { token: string; path: string };
       }[];
 
-      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; microPreview: string; }[] = [];
+      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; }[] = [];
       for (let i = 0; i < photos.length; i++) {
         const file = photos[i];
         const slot = slots[i];
@@ -187,6 +189,17 @@ export default function NewDeliveryPage() {
           </div>
         </div>
 
+        <div style={S.row}>
+          <div>
+            <label style={S.label}>納品期限</label>
+            <input style={{ ...S.input, width: 150 }} type="date" value={dueDate} disabled={!!project} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+          <div>
+            <label style={S.label}>請求予定金額（税抜）</label>
+            <input style={{ ...S.input, width: 150 }} type="number" value={chargeAmount} disabled={!!project} onChange={(e) => setChargeAmount(e.target.value)} placeholder="例: 50000" />
+          </div>
+        </div>
+
         {deliveryType === "review" && !project && (
           <label style={S.check}>
             <input type="checkbox" checked={selectEnabled} onChange={(e) => setSelectEnabled(e.target.checked)} />
@@ -233,6 +246,12 @@ export default function NewDeliveryPage() {
                 : <><p style={S.dropText}>動画をドラッグ、またはクリックして選択</p><p style={S.dropSub}>R2に保存します（大容量もそのままOK）</p></>}
             </div>
             {videoCount > 0 && <p style={S.uploaded}>✓ 動画 {videoCount}本をアップロード済み</p>}
+
+            {project.notionError ? (
+              <p style={S.notionWarn}>⚠️ Notionへの書き込みに失敗しました（案件は作成済み）: {project.notionError}</p>
+            ) : project.notionSynced ? (
+              <p style={S.notionOk}>✓ Notionの納品管理に登録しました</p>
+            ) : null}
 
             {/* 共有リンク */}
             <div style={S.result}>
@@ -281,4 +300,6 @@ const S: Record<string, CSSProperties> = {
   mono: { flex: 1, height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: mono, background: "#fff", boxSizing: "border-box", color: "#1a1a1a" },
   ghost: { height: 38, padding: "0 14px", background: "#fff", border: "0.5px solid #d4d4d4", borderRadius: 8, fontSize: 13, color: "#555", cursor: "pointer", whiteSpace: "nowrap" },
   hint: { fontSize: 12, color: "#999", margin: "8px 0 0", lineHeight: 1.6 },
+  notionOk: { fontSize: 13, color: "#2d7a4a", margin: "16px 0 0" },
+  notionWarn: { fontSize: 13, color: "#a15c00", background: "#fdf6ec", border: "0.5px solid #f0dfc0", borderRadius: 8, padding: "10px 12px", margin: "16px 0 0", lineHeight: 1.6 },
 };
