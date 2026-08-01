@@ -1,10 +1,8 @@
-cat > app/api/admin/notion-check/route.ts << 'NOTIONEOF'
 import { NextResponse } from "next/server";
 import { notion, NOTION_DELIVERY_DB_ID } from "@/lib/notion";
 
 export const runtime = "nodejs";
 
-// Notionとの疎通確認。納品DBのプロパティ一覧と、登録済みページ数を返す。
 export async function GET() {
   if (!process.env.NOTION_TOKEN || !NOTION_DELIVERY_DB_ID) {
     return NextResponse.json({ error: "NOTION_TOKEN または NOTION_DELIVERY_DB_ID が未設定です" }, { status: 500 });
@@ -34,4 +32,3 @@ export async function GET() {
     );
   }
 }
-NOTIONEOF
