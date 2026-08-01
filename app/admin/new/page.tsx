@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import imageCompression from "browser-image-compression";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { microPreviewFromImage, microPreviewFromVideo } from "@/lib/micro-preview";
@@ -16,6 +16,11 @@ export default function NewDeliveryPage() {
   const [deleteAfterDays, setDeleteAfterDays] = useState(30);
   const [dueDate, setDueDate] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
+  const [mode, setMode] = useState<"new" | "existing">("new");
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
+  const [customerId, setCustomerId] = useState("");
+  const [uncreated, setUncreated] = useState<{ pageId: string; name: string; shootDate: string | null; deliveryType: "review" | "final" | null; dueDate: string | null; chargeAmount: number | null }[]>([]);
+  const [existingPageId, setExistingPageId] = useState("");
 
   const [creating, setCreating] = useState(false);
   const [project, setProject] = useState<Created | null>(null);
@@ -34,6 +39,26 @@ export default function NewDeliveryPage() {
   const [videoDrag, setVideoDrag] = useState(false);
   const videoInput = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    fetch("/api/admin/form-options")
+      .then((r) => r.json())
+      .then((d) => { setCustomers(d.customers ?? []); setUncreated(d.uncreated ?? []); })
+      .catch(() => {});
+  }, []);
+
+  // 既存案件を選んだらフォームに反映
+  function pickExisting(pageId: string) {
+    setExistingPageId(pageId);
+    const found = uncreated.find((u) => u.pageId === pageId);
+    if (found) {
+      setName(found.name);
+      setShootDate(found.shootDate ?? "");
+      if (found.deliveryType) setDeliveryType(found.deliveryType);
+      setDueDate(found.dueDate ?? "");
+      setChargeAmount(found.chargeAmount != null ? String(found.chargeAmount) : "");
+    }
+  }
+
   async function createProject() {
     if (!name) return;
     setCreating(true);
@@ -41,7 +66,7 @@ export default function NewDeliveryPage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays, dueDate: dueDate || null, chargeAmount: chargeAmount ? Number(chargeAmount) : null }),
+        body: JSON.stringify({ name, shootDate: shootDate || null, deliveryType, selectEnabled, deleteAfterDays, dueDate: dueDate || null, chargeAmount: chargeAmount ? Number(chargeAmount) : null, customerPageId: mode === 'new' ? (customerId || null) : null, existingNotionPageId: mode === 'existing' ? (existingPageId || null) : null }),
       });
       const data = await res.json();
       if (res.ok) setProject(data);
@@ -73,7 +98,7 @@ export default function NewDeliveryPage() {
         thumbUpload: { token: string; path: string };
       }[];
 
-      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; microPreview: string; }[] = [];
+      const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; }[] = [];
       for (let i = 0; i < photos.length; i++) {
         const file = photos[i];
         const slot = slots[i];
@@ -163,8 +188,39 @@ export default function NewDeliveryPage() {
       <div style={S.card}>
         <h1 style={S.h1}>新規納品を作成</h1>
 
+        {!project && (
+          <div style={S.modeRow}>
+            <button style={mode === "new" ? S.modeOn : S.modeOff} onClick={() => { setMode("new"); setExistingPageId(""); }}>新規作成</button>
+            <button style={mode === "existing" ? S.modeOn : S.modeOff} onClick={() => setMode("existing")}>Notionの案件から選ぶ</button>
+          </div>
+        )}
+
+        {mode === "existing" && !project && (
+          <>
+            <label style={S.label}>Notionの未作成案件</label>
+            <select style={S.input} value={existingPageId} onChange={(e) => pickExisting(e.target.value)}>
+              <option value="">選択してください</option>
+              {uncreated.map((u) => (
+                <option key={u.pageId} value={u.pageId}>{u.name}</option>
+              ))}
+            </select>
+          </>
+        )}
+
         <label style={S.label}>案件名</label>
         <input style={S.input} value={name} disabled={!!project} onChange={(e) => setName(e.target.value)} placeholder="cafe LOTUS 秋メニュー撮影" />
+
+        {mode === "new" && !project && customers.length > 0 && (
+          <>
+            <label style={S.label}>顧客</label>
+            <select style={S.input} value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+              <option value="">（未選択）</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </>
+        )}
 
         <div style={S.row}>
           <div>
@@ -279,6 +335,9 @@ const S: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", colorScheme: "light", background: "#fafafa", padding: "48px 16px", display: "flex", justifyContent: "center" },
   card: { width: "100%", maxWidth: 560, background: "#fff", border: "0.5px solid #e5e5e5", borderRadius: 12, padding: "32px 28px" },
   h1: { fontSize: 20, fontWeight: 500, margin: "0 0 24px", letterSpacing: "0.02em" },
+  modeRow: { display: "flex", gap: 8, marginBottom: 20 },
+  modeOn: { flex: 1, height: 40, background: "#1a1a1a", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer" },
+  modeOff: { flex: 1, height: 40, background: "#fff", color: "#666", border: "0.5px solid #d4d4d4", borderRadius: 8, fontSize: 13, cursor: "pointer" },
   label: { display: "block", fontSize: 13, color: "#888", margin: "0 0 6px" },
   input: { width: "100%", height: 38, border: "0.5px solid #e5e5e5", borderRadius: 8, padding: "0 12px", fontSize: 14, boxSizing: "border-box", marginBottom: 16, background: "#fff", color: "#1a1a1a" },
   row: { display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" },

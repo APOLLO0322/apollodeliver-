@@ -7,3 +7,4 @@ export const notion = new Client({ auth: process.env.NOTION_TOKEN });
 // プロパティの読み書き・ページ作成・クエリはデータソースIDに対して行う。
 export const NOTION_DELIVERY_DB_ID = process.env.NOTION_DELIVERY_DB_ID!;
 export const NOTION_DATA_SOURCE_ID = process.env.NOTION_DATA_SOURCE_ID!;
+export const NOTION_CUSTOMER_DATA_SOURCE_ID = process.env.NOTION_CUSTOMER_DATA_SOURCE_ID!;
