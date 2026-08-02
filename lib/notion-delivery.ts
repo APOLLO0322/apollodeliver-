@@ -80,9 +80,13 @@ export async function findUnhandledDeliveries(withinDays = 3): Promise<
 // 顧客一覧を取得（フォームのプルダウン用）。タイトル列名は「顧客名」想定。
 export async function listCustomers(): Promise<{ id: string; name: string }[]> {
   const dsId = process.env.NOTION_CUSTOMER_DATA_SOURCE_ID!;
-  const res = await (notion as any).dataSources.query({
+const res = await (notion as any).dataSources.query({
     data_source_id: dsId,
     page_size: 100,
+    filter: {
+      property: "ステータス",
+      status: { does_not_equal: "終了・休眠" },
+    },
   });
   return res.results
     .map((page: any) => {
