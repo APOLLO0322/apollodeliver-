@@ -206,15 +206,10 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
 
     setZipping(true);
     try {
-      // 動画は重いのでZIPに入れず、1本ずつ直接ダウンロード
+      // 動画は重いのでZIPに入れず、新規タブで直接開く（スマホのSafari対策）
       for (const v of videos) {
-        const a = document.createElement("a");
-        a.href = v.downloadUrl!;
-        a.download = v.filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        await new Promise((r) => setTimeout(r, 800)); // 連続DLの間隔
+        window.open(v.downloadUrl!, "_blank");
+        await new Promise((r) => setTimeout(r, 800));
       }
 
       // 写真は軽いのでZIPにまとめる
