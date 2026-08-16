@@ -205,26 +205,36 @@ export default function DeliveryPage({ params }: { params: Promise<{ linkId: str
     if (photos.length === 0 && videos.length === 0) { alert("ダウンロードする項目を選択してください"); return; }
 
     setZipping(true);
-    setZipProgress({ done: 0, total: photos.length + videos.length });
     try {
-      const zip = new JSZip();
-      let done = 0;
-      for (const p of photos) {
-        const blob = await (await fetch(p.downloadUrl!)).blob();
-        zip.file(p.filename, blob);
-        setZipProgress({ done: ++done, total: photos.length + videos.length });
-      }
+      // 動画は重いのでZIPに入れず、1本ずつ直接ダウンロード
       for (const v of videos) {
-        const blob = await (await fetch(v.downloadUrl!)).blob();
-        zip.file(v.filename, blob);
-        setZipProgress({ done: ++done, total: photos.length + videos.length });
+        const a = document.createElement("a");
+        a.href = v.downloadUrl!;
+        a.download = v.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        await new Promise((r) => setTimeout(r, 800)); // 連続DLの間隔
       }
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement("a");
-      a.href = url; a.download = `${data.name}.zip`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+
+      // 写真は軽いのでZIPにまとめる
+      if (photos.length > 0) {
+        setZipProgress({ done: 0, total: photos.length });
+        const zip = new JSZip();
+        let done = 0;
+        for (const p of photos) {
+          const blob = await (await fetch(p.downloadUrl!)).blob();
+          zip.file(p.filename, blob);
+          setZipProgress({ done: ++done, total: photos.length });
+        }
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement("a");
+        a.href = url; a.download = `${data.name}.zip`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }
+
       fetch("/api/download-notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkId, kind: "bulk", count: photos.length + videos.length }) }).catch(() => {});
     } catch {
       alert("ダウンロードに失敗しました");
