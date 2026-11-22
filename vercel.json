@@ -3,6 +3,10 @@
     {
       "path": "/api/purge-expired",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 12 * * *"
     }
   ]
 }
