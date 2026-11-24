@@ -5,6 +5,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { r2, R2_BUCKET } from "@/lib/r2";
 import { notifyLine } from "@/lib/notify";
+import { findFallbackProject } from "@/lib/delivery-fallback";
 
 export const runtime = "nodejs";
 
@@ -16,14 +17,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "リンクIDとパスワードが必要です" }, { status: 400 });
   }
 
-  const { data: project, error: pErr } = await supabaseAdmin
+  const { data: dbProject, error: pErr } = await supabaseAdmin
     .from("projects")
     .select("id, name, shoot_date, delivery_type, select_enabled, password_hash, expires_at, photo_download_limit, video_download_limit")
     .eq("link_id", linkId)
     .single();
 
-  if (pErr || !project) {
-    return NextResponse.json({ error: "リンクが見つかりません" }, { status: 404 });
+  // PGRST116 は「該当なし」。それ以外のエラーはDBに接続できない状態とみなし、予備データを探す。
+  const dbDown = !!pErr && pErr.code !== "PGRST116";
+  const fallback = dbDown ? findFallbackProject(linkId) : null;
+  const project = dbProject ?? fallback;
+
+  if (!project) {
+    return dbDown
+      ? NextResponse.json(
+          { error: "ただいま一時的に表示できません。しばらくしてからお試しください" },
+          { status: 503 }
+        )
+      : NextResponse.json({ error: "リンクが見つかりません" }, { status: 404 });
   }
 
   if (project.expires_at && new Date(project.expires_at) < new Date()) {
@@ -37,11 +48,13 @@ export async function POST(req: Request) {
 
   const isFinal = project.delivery_type === "final";
 
-  const { data: assets, error: aErr } = await supabaseAdmin
-    .from("assets")
-    .select("id, kind, seq, storage, storage_key, thumb_key, original_filename")
-    .eq("project_id", project.id)
-    .order("seq", { ascending: true });
+  const { data: assets, error: aErr } = fallback
+    ? { data: fallback.assets, error: null }
+    : await supabaseAdmin
+        .from("assets")
+        .select("id, kind, seq, storage, storage_key, thumb_key, original_filename")
+        .eq("project_id", project.id)
+        .order("seq", { ascending: true });
 
   if (aErr) {
     return NextResponse.json({ error: "データの取得に失敗しました" }, { status: 500 });
@@ -109,11 +122,13 @@ export async function POST(req: Request) {
     }
   }
 
-  await supabaseAdmin.from("events").insert({
-    project_id: project.id,
-    action: "view",
-    meta: {},
-  });
+  if (!fallback) {
+    await supabaseAdmin.from("events").insert({
+      project_id: project.id,
+      action: "view",
+      meta: {},
+    });
+  }
 
   if (!isFinal) {
     await notifyLine(`👀 ${project.name}（確認用）が開かれました`);
