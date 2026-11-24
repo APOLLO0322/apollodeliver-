@@ -22,10 +22,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "パラメータが不正です" }, { status: 400 });
   }
 
+  if (items.some((it) => !it.originalKey?.startsWith(`${projectId}/photos/`) || !it.thumbKey?.startsWith(`${projectId}/thumbs/`))) {
+    return NextResponse.json({ error: "保存先が不正です。画面を再読み込みしてください" }, { status: 400 });
+  }
+
   const rows = items.map((it) => ({
     project_id: projectId,
     kind: "photo" as const,
-    storage: "supabase" as const,
+    storage: "r2" as const,
     storage_key: it.originalKey,
     thumb_key: it.thumbKey,
     original_filename: it.originalFilename,

@@ -3,6 +3,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { r2, R2_BUCKET } from "@/lib/r2";
+import { signPhotoGet } from "@/lib/r2-photos";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,16 @@ export async function GET(req: Request) {
   const videos = [];
 
   for (const a of assets ?? []) {
-    if (a.kind === "photo") {
+    if (a.kind === "photo" && a.storage === "r2") {
+      const filename = a.original_filename ?? `${String(a.seq).padStart(3, "0")}.jpg`;
+      photos.push({
+        id: a.id,
+        seq: a.seq,
+        url: a.thumb_key ? await signPhotoGet(a.thumb_key) : null,
+        downloadUrl: a.storage_key ? await signPhotoGet(a.storage_key, filename) : null,
+        filename,
+      });
+    } else if (a.kind === "photo") {
       const { data: thumb } = await supabaseAdmin.storage
         .from("thumbnails")
         .createSignedUrl(a.thumb_key!, 3600);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import imageCompression from "browser-image-compression";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { putFile } from "@/lib/put-file";
 import { microPreviewFromImage, microPreviewFromVideo } from "@/lib/micro-preview";
 
 type Created = { id: string; url: string; password: string; linkId: string; notionSynced?: boolean; notionError?: string | null };
@@ -78,7 +78,7 @@ export default function NewDeliveryPage() {
     }
   }
 
-  // 写真アップロード（ブラウザ → Supabase）
+  // 写真アップロード（ブラウザ → R2 に直接 PUT）
   async function uploadPhotos(fileList: FileList | null) {
     if (!fileList || fileList.length === 0 || !project) return;
     const photos = Array.from(fileList).filter((f) => f.type.startsWith("image/"));
@@ -96,8 +96,8 @@ export default function NewDeliveryPage() {
       if (!urlRes.ok) throw new Error(urlData.error ?? "URL発行に失敗");
       const slots = urlData.slots as {
         seq: number; originalKey: string; thumbKey: string;
-        originalUpload: { token: string; path: string };
-        thumbUpload: { token: string; path: string };
+        originalUploadUrl: string;
+        thumbUploadUrl: string;
       }[];
 
       const recorded: { seq: number; originalKey: string; thumbKey: string; originalFilename: string; sizeBytes: number; microPreview: string; }[] = [];
@@ -106,10 +106,8 @@ export default function NewDeliveryPage() {
         const slot = slots[i];
         const thumb = await imageCompression(file, { maxWidthOrHeight: 2000, maxSizeMB: 1.5, useWebWorker: true, fileType: "image/jpeg" });
         const micro = await microPreviewFromImage(file);
-        const up1 = await supabaseBrowser.storage.from("photos").uploadToSignedUrl(slot.originalUpload.path, slot.originalUpload.token, file);
-        if (up1.error) throw new Error(`原本の保存に失敗: ${up1.error.message}`);
-        const up2 = await supabaseBrowser.storage.from("thumbnails").uploadToSignedUrl(slot.thumbUpload.path, slot.thumbUpload.token, thumb);
-        if (up2.error) throw new Error(`軽量版の保存に失敗: ${up2.error.message}`);
+        await putFile(slot.originalUploadUrl, file, "原本");
+        await putFile(slot.thumbUploadUrl, thumb, "軽量版");
         recorded.push({ seq: slot.seq, originalKey: slot.originalKey, thumbKey: slot.thumbKey, originalFilename: file.name, sizeBytes: file.size, microPreview: micro });
         setPhotoProgress({ done: i + 1, total: photos.length });
       }

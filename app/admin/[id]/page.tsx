@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, use, type CSSProperties } from "react";
 import Link from "next/link";
 import imageCompression from "browser-image-compression";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { putFile } from "@/lib/put-file";
 
 type Project = {
   id: string; link_id: string; name: string; shoot_date: string | null;
@@ -121,17 +121,16 @@ export default function AdminDetailPage({ params }: { params: Promise<{ id: stri
         const file = photos[i];
         const slot = slots[i];
         const thumb = await imageCompression(file, { maxWidthOrHeight: 2000, maxSizeMB: 1.5, useWebWorker: true, fileType: "image/jpeg" });
-        const up1 = await supabaseBrowser.storage.from("photos").uploadToSignedUrl(slot.originalUpload.path, slot.originalUpload.token, file);
-        if (up1.error) throw new Error(up1.error.message);
-        const up2 = await supabaseBrowser.storage.from("thumbnails").uploadToSignedUrl(slot.thumbUpload.path, slot.thumbUpload.token, thumb);
-        if (up2.error) throw new Error(up2.error.message);
+        await putFile(slot.originalUploadUrl, file, "原本");
+        await putFile(slot.thumbUploadUrl, thumb, "軽量版");
         recorded.push({ seq: slot.seq, originalKey: slot.originalKey, thumbKey: slot.thumbKey, originalFilename: file.name, sizeBytes: file.size });
         setPhotoProgress({ done: i + 1, total: photos.length });
       }
-      await fetch("/api/upload-complete", {
+      const doneRes = await fetch("/api/upload-complete", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: id, items: recorded }),
       });
+      if (!doneRes.ok) throw new Error((await doneRes.json().catch(() => null))?.error ?? "記録に失敗");
       setPhotoState("idle");
       load();
     } catch (e) {
